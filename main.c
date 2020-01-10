@@ -4,11 +4,12 @@
 #include <netinet/in.h>
 #include <linux/kernel.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <signal.h>
 
 #define SERVER_PORT 5000
 #define BUFF_LEN 1024
 #define NIPQUAD_FMT "%u.%u.%u.%u"
-#define NIPQUAD_FMTF "%u%u%u%u"
 #define NIPQUAD(addr)\
 	((unsigned char*)&addr)[0], ((unsigned char*)&addr)[1], ((unsigned char*)&addr)[2], ((unsigned char*)&addr)[3]
 
@@ -31,15 +32,16 @@ void handle_udp_msg(int fd)
 			printf("recieve data fail!\n");
 			return;
 		}
-		printf("[INPUT]: " NIPQUAD_FMT " : %s\n", NIPQUAD(clent_addr.sin_addr.s_addr), buf);
+		printf("[INPUT]: " NIPQUAD_FMT ":%d : %s\n", NIPQUAD(clent_addr.sin_addr.s_addr), htons(clent_addr.sin_port), buf);
 
 		if(strcmp(buf, "register") == 0)
 		{
 			memset(buf, 0, BUFF_LEN);
 			sprintf(buf, "registered");
-			printf("[OUTPUT]: " NIPQUAD_FMT " : %s\n", NIPQUAD(clent_addr.sin_addr.s_addr), buf);
-			sprintf(clientname,"clients/" NIPQUAD_FMTF, NIPQUAD(clent_addr.sin_addr.s_addr));
-			open(clientname, O_CREAT, 0755);
+			printf("[OUTPUT]: " NIPQUAD_FMT ":%d : %s\n", NIPQUAD(clent_addr.sin_addr.s_addr), htons(clent_addr.sin_port), buf);
+			sprintf(clientname,"clients/" NIPQUAD_FMT, NIPQUAD(clent_addr.sin_addr.s_addr));
+			int ffd = open(clientname, O_CREAT, 0755);
+			close(ffd);
 			sendto(fd, buf, strlen(buf) + 1, 0, (struct sockaddr*)&clent_addr, len);
 		}
 	}
@@ -70,8 +72,26 @@ int init()
 
 }
 
+void Stop(int signo)
+{
+	char *dir_name = "clients";
+	DIR  *dirp;
+	char strTmpPath[500] = "\0";
+	struct dirent *dp;
+	dirp = opendir(dir_name);
+	while((dp = readdir(dirp)) != NULL){
+		if(strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0){
+			continue;
+		}
+		sprintf(strTmpPath, "%s/%s", dir_name, dp->d_name);
+		int n = remove(strTmpPath);
+	}
+	closedir(dirp);
+	_exit(0);
+}
 int main(int argc, char* argv[])
 {
+	signal(SIGINT, Stop); 	//退出时删除clients里的所有文件
 	int fd = init();
 	handle_udp_msg(fd);
 	close(fd);
